@@ -1,0 +1,172 @@
+# Antigravity 프로젝트 규칙: React(Figma) → Vue 3 마이그레이션
+
+이 문서는 Google Antigravity가 이 레포에서 프론트엔드 작업을 할 때 따라야 할 기본 규칙이다.
+
+---
+
+## 0. Scope & Priority
+
+- 이 프로젝트에서 **프론트엔드는 보조적인 역할**이다.  
+- Antigravity는 다음을 우선한다.
+  1. 기존 UI/동작을 깨뜨리지 않을 것
+  2. 백엔드/인프라 코드는 건드리지 않을 것
+  3. **현재 실제로 사용 중인 컴포넌트/화면만** React → Vue로 변환할 것
+- 전체 코드를 한 번에 대규모 리팩토링하거나, 새 기능/화면을 임의로 추가하지 않는다.
+
+**중요 : 나중에 백엔드 작업할 때 전혀 문제가 없게 유지보수성과 확장성에 신경을 써줘.**
+---
+
+## 1. 프로젝트 개요
+
+- 현재 프론트 코드: React + TypeScript (`.tsx`)
+- 상당수 UI는 Figma → Antigravity로 생성된 컴포넌트 (`ui` 폴더 등)
+- 목표:
+  - Vue 3 + Composition API (`<script setup>`) 기반의 Vue 프로젝트 생성
+  - **지금 실제로 사용하는 화면/컴포넌트부터** 점진적으로 Vue로 이전
+  - 필요해질 때마다 React UI 코드를 참고해서 Vue로 변환
+
+---
+
+## 2. 폴더 구조 (타깃 Vue 기준)
+
+Vue 프로젝트는 대략 다음 구조를 따른다.
+
+```text
+frontend-vue/
+  src/
+    api/
+    assets/
+    components/
+      ui/        # Figma React UI를 변환한 Vue UI 컴포넌트
+      common/    # 앱 전역 공용 컴포넌트
+      domain/    # 특정 도메인 전용 컴포넌트
+    composables/ # React hooks 대응
+    router/      # Vue Router
+    screens/     # 화면 단위 뷰
+    store/       # Pinia
+    styles/      # 공통 스타일/테마
+    types/       # 공통 타입
+    App.vue
+    main.ts
+````
+
+기존 React UI 원본은 다음처럼 보관한다.
+
+```text
+src/
+  figma-react-ui/   # Figma에서 생성된 React UI 원본(.tsx), 참고용
+```
+
+* `src/figma-react-ui` 폴더는 **읽기 전용 원본 보관소**로 사용한다.
+* Vue 프로젝트에서 직접 import 해서 쓰지 않는다.
+
+---
+
+## 3. React → Vue 변환 기본 규칙
+
+필요한 부분을 변환할 때만 다음 규칙을 사용한다.
+
+### 3.1 JSX → Vue 템플릿
+
+* `className` → `class`
+* 이벤트: `onClick={fn}` → `@click="fn"` 등
+* `{value}` → `{{ value }}`
+* 리스트: `items.map(...)` → `v-for="item in items" :key="item.id"`
+* 조건 렌더링:
+
+  * `{cond && <A />}` → `<A v-if="cond" />`
+  * `{cond ? <A /> : <B />}` → `<A v-if="cond" /><B v-else />`
+
+### 3.2 Hooks → Composition API
+
+* `useState` → `ref` / `reactive`
+* `useEffect`(mount only) → `onMounted`
+* `useEffect`(값 감시) → `watch` / `watchEffect`
+* `useMemo` → `computed`
+
+### 3.3 컴포넌트 스타일
+
+* Vue 컴포넌트는 **Single File Component** + `<script setup>` 사용:
+
+```vue
+<script setup lang="ts">
+// props, state, methods
+</script>
+
+<template>
+  <!-- template -->
+</template>
+
+<style scoped>
+/* 필요 시 스타일 */
+</style>
+```
+
+* Tailwind를 쓰는 경우, 클래스는 그대로 유지한다.
+* styled-components 등은 `<style scoped>` 또는 공용 스타일 파일로 옮긴다.
+
+---
+
+## 4. Figma UI 컴포넌트 처리 정책
+
+Figma에서 생성된 React UI 컴포넌트(예: `accordion.tsx`, `button.tsx`, …)는 다음처럼 다룬다.
+
+1. **원본 React 코드는 `src/figma-react-ui/*.tsx`에 보관**한다.
+2. Vue 프로젝트에서 실제로 **사용 중인 컴포넌트만** Vue로 변환한다.
+
+   * 예: 화면에서 `button`과 `card`만 쓰고 있다면,
+
+     * `Button.vue`, `Card.vue`만 `frontend-vue/src/components/ui`에 만든다.
+3. 나중에 새 UI가 필요하면,
+
+   * 해당 React 원본(`figma-react-ui/*.tsx`)을 참고하여
+   * 그때그때 Vue 컴포넌트(예: `Tooltip.vue`)를 새로 만든다.
+4. 한 번도 쓰이지 않는 UI 컴포넌트는 굳이 Vue로 옮기지 않는다.
+
+Vue 측 파일 위치 예:
+
+```text
+frontend-vue/src/components/ui/
+  Accordion.vue
+  Button.vue
+  Card.vue
+  ...
+```
+
+---
+
+## 5. 마이그레이션 흐름 (요약)
+
+Antigravity가 크게 해야 할 일의 순서는 다음과 같다.
+
+1. **Vue 뼈대 생성**
+
+   * `frontend-vue` 폴더에 Vue 3 + Vite + TS + Tailwind 템플릿 추가
+   * 기본 `App.vue`, `main.ts`, `router`만 구성
+2. **Figma React UI 원본 정리**
+
+   * 기존 `src/ui/*.tsx` → `src/figma-react-ui/*.tsx`로 이동
+   * 기존 React 코드에서 `ui`를 쓰고 있다면, import 경로만 `figma-react-ui`로 조정
+3. **실제 사용하는 화면/컴포넌트부터 Vue로 이전**
+
+   * 우선순위가 높은 화면 하나를 정해서:
+
+     * 그 화면에 필요한 `components/ui` Vue 버전 생성
+     * 화면 컴포넌트를 `frontend-vue/src/screens/*.vue`로 만들고 Vue Router에 연결
+4. **hooks → composables, store → Pinia 등은 필요해질 때 순차적으로 이전**
+5. 기존 React 코드는 바로 지우지 않고,
+   Vue 쪽이 안정화될 때까지 함께 유지한다.
+
+---
+
+## 6. Antigravity를 위한 기본 지침
+
+Antigravity는 이 문서를 헌법처럼 사용한다.
+
+* 명시적으로 요청된 화면/컴포넌트 외에는 **React → Vue 변환을 시도하지 않는다.**
+* `src/figma-react-ui` 폴더는 원본 보관용이며, Vue 코드에서 import 하지 않는다.
+* Vue 코드 작성 시:
+
+  * `<script setup lang="ts">` 사용
+  * 불필요한 대규모 리팩토링은 피하고,
+  * 에러/타입이 애매한 경우 `// TODO: 확인 필요` 주석만 남긴다.
